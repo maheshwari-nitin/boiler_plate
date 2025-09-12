@@ -1,0 +1,175 @@
+---
+title: "Assignment 1 MTH442"
+format: pdf
+editor: visual
+author: Gaurav Kumar Rampuria (230413, BS SDS)
+---
+
+# Question 1
+
+**(a) Fit a structural regression model for Johnson and Johnson dataset.**
+
+```{r, echo=TRUE}
+# Load the dataset
+data("JohnsonJohnson")
+
+jj <- JohnsonJohnson
+head(jj)
+plot(JohnsonJohnson, main = "Johnson & Johnson Quarterly Earnings", ylab = "Earnings per Share", xlab = "Year", type = "b")
+
+
+trend = time(jj) - 1970
+Q = factor(cycle(jj))
+reg = lm(log(jj) ~0 + trend + Q, na.action = NULL) # 0 intercept model
+reg$coefficients
+```
+
+**(b) If the model is correct, what is the estimated average annual increase in the logged earnings per share?**
+
+The average increase in logged earnings is given by the trend coefficient beta, since t = 1 is one year.
+
+```{r, echo = TRUE}
+reg$coefficients[1]
+```
+
+**(c) If the model is correct, does the average logged earnings rate increase or decrease from the third quarter to the fourth quarter? And, by what percentage does it increase or decrease?**
+
+The expected logged earnings in a third quarter at time t is **E\[x~t~∣Q3\]=**$\beta$t + \$\\alpha\$~3~.
+
+The expected logged earnings in the *next* quarter (a fourth quarter at time t+1/4) is **E\[x~t+0.25~∣Q4\]=**$\beta$(t+0.25) + \$\\alpha\$~4~ = $\beta$t + $\beta$/4 + \$\\alpha\$~4~.
+
+The difference between these two values is: $\beta$/4 + \$\\alpha\$~4~ - \$\\alpha\$~3~. The sign of this result tells us if it's an increase or decrease.
+
+```{r, echo = TRUE}
+beta = reg$coefficients[1]
+a3 = reg$coefficients[4]
+a4 = reg$coefficients[5]
+del = beta/4 + a4 - a3
+del
+```
+
+Since the sign is negative, the average logged earnings rate *decreases* from the third quarter to the fourth quarter.
+
+Using the logarithm property that $\exp(\log(a) - \log(b)) = a/b$, we find the ratio of the actual earnings by exponentiating the difference calculated. This gives us the multiplicative factor between the two quarters.
+
+$$ \frac{y\_{Q4}}{y\_{Q3}} = \exp(\hat{\beta} + \hat{\alpha}\_4 - \hat{\alpha}\_3) $$
+
+The standard formula for percentage change is \`((New / Old) - 1) \* 100\`.
+
+$$\text{Percentage Change} = [\exp(\hat{\beta} + \hat{\alpha}\_4 - \hat{\alpha}\_3) - 1] \times 100\\% $$
+
+```{r, echo = TRUE}
+(exp(del) - 1) * 100
+```
+
+This is the percentage decrease in the earnings from the third quarter to the fourth quarter.
+
+**(d) What happens if you include an intercept term in the model in (a)? Explain why there was a problem.**
+
+If you add an intercept term (\$\\alpha\$~0~) to the model, it becomes: x~t~=\$\\alpha\$~0~ + $\beta$t + \$\\alpha\$~1~Q1(t) + \$\\alpha\$~2~Q2(t) + \$\\alpha\$~3~Q3(t) + \$\\alpha\$~4~Q4(t) + w~t~
+
+For any given time t, exactly one of the Qi(t) is 1 and the rest are 0. This means that Q1(t) + Q2(t) + Q3(t) + Q4(t) = 1 for all t. The intercept term \$\\alpha\$~0~ is also always multiplied by 1.
+
+This creates perfect multicollinearity, a situation where one predictor variable is a perfect linear combination of others. A regression algorithm cannot find a unique solution when this happens because the design matrix is not invertible.
+
+**(e) Graph the data, xt, and superimpose the fitted values, say x**$\hat{t}$, on the graph. Examine the residuals, xt − x$\hat{t}$, and state your conclusions. Does it appear that the model fits the data well (do the residuals look white)?
+
+```{r, echo = TRUE}
+plot(log(jj), main = "Logged Johnson & Johnson Quarterly Earnings", ylab = "Logged Earnings per Share", xlab = "Year")
+x_pred = model.matrix(reg) %*% reg$coefficients 
+lines(fitted(reg), col = "red")
+legend("topleft", 
+       legend = c("Observed", "Fitted"), 
+       col = c("black", "red"), 
+       lty = c(1, 1), 
+       bty = "n")  # bty = "n" removes the legend box
+```
+
+Analysis of the Plot:-
+
+-   **Trend:** The red "Fitted" line does an good job of capturing the overall upward linear trend of the black "Observed" data. This suggests the beta term in the model is working well.
+
+-   **Seasonality:** The model also successfully captures the repeating seasonal pattern (the regular ups and downs within each year). The peaks and troughs of the red line align well with the peaks and troughs of the black line. This indicates the quarterly dummy variables are effective.
+
+```{r, echo = TRUE}
+# Residual analysis
+plot(reg)
+
+resid_reg <- residuals(reg)
+plot(resid_reg, main = "Residuals", ylab = "Residuals", xlab = "Time")
+abline(h = 0, col = "blue")
+acf(resid_reg, main = "ACF of Residuals")
+```
+
+**No Clear Pattern**: The most important feature is that the points are scattered randomly around the horizontal dotted line at 0. There is no obvious curve, U-shape, or other systematic pattern.
+
+**Constant Variance**: The vertical spread of the points is roughly the same from the left side of the plot to the right. This means the model's accuracy is consistent across all levels.
+
+**Not White Noise**: The residuals are not white noise. For white noise, almost all spikes should be inside the blue dashed lines, but here, many are outside.
+
+**Significant Autocorrelation**: The spikes at lags 1, 2, and 3 are significant. This means an error in one quarter is related to the errors in the previous quarters, confirming the "clumping" pattern seen in the earlier plot.
+
+# Question 2
+
+**(a) Add another component to the regression in (2.21) that accounts for the particulate count four weeks prior; that is, add P~t−4~ to the regression in (2.21). State your conclusion.**
+
+**(b) Draw a scatterplot matrix of M~t~, T~t~, P~t~ and P~t-4~ and then calculate the pairwise correlations between the series. Compare the relationship between M~t~ and P~t~ versus M~t~ and P~t−4~.**
+
+```{r, echo=TRUE}
+library(astsa)
+temp = tempr - mean(tempr) # Center temperature
+temp2 = temp^2 
+trend = time(cmort) 
+# Fitting the model
+fit = lm(cmort ~ trend + temp + temp2 + part, na.action = NULL)
+fit$coefficients
+
+# First 4 values will be NULL
+part4 <- c(rep(NA, 4), head(as.numeric(part), -4))
+fit2 = lm(cmort ~ trend + temp + temp2 + part + part4, na.action = na.omit)
+fit2$coefficients
+
+# Display the scatter plot matrix and correlation
+pairs(~ cmort + temp + part + part4)
+cor(cbind(cmort, temp, part, part4, trend), use = "complete.obs")
+```
+
+Mortality has a positive correlation with the amount of particulate matter. We can see that there exists a **higher correlation** with the particulate matter 4 weeks back, compared to the current particulate level.
+
+# Question 3
+
+**(a) Generate four series that are random walk with drift, of length n = 100 with** $\delta$ = .01 and σw = 1. Call the data x~t~ for t = 1, . . ., 100. Fit the regression x~t~ = $\beta$t + w~t~ using least squares. Plot the data, the true mean function (i.e., $\mu$t = .01 t) and the fitted line, xˆt = $\beta$ˆ t, on the same graph.
+
+```{r, echo=TRUE}
+par(mfrow=c(2,2), mar=c(2.5,2.5,0,0)+.5, mgp=c(1.6,.6,0))
+for (i in 1:4){
+  x = ts(cumsum(rnorm(100,.01,1))) # data
+  regx = lm(x~0+time(x), na.action=NULL) # regression
+  print(regx$coefficients)
+  plot(x, ylab='Random Walk w Drift') # plots
+  abline(a=0, b=.01, col=2, lty=2) # true mean (red - dashed)
+  abline(regx, col=4) # fitted line (blue - solid)
+}
+```
+
+**(b) Generate four series of length n = 100 that are linear trend plus noise, say y~t~ = .01 t + w~t~, where t and w~t~ are as in part (a). Fit the regression y~t~ =** $\beta$t + wt using least squares. Plot the data, the true mean function (i.e., $\mu$t = .01 t) and the fitted line, y$\hat{t}$ = $\beta$ˆ t, on the same graph.
+
+```{r, echo=TRUE}
+par(mfrow=c(2,2), mar=c(2.5,2.5,0,0)+.5, mgp=c(1.6,.6,0))
+for (i in 1:4){
+  x = ts(0.01 * (1:100) + rnorm(100, 0, 1)) # data
+  regx = lm(x~0+time(x), na.action=NULL) # regression
+  print(regx$coefficients)
+  plot(x, ylab='Random Walk w Drift') # plots
+  abline(a=0, b=.01, col=2, lty=2) # true mean (red - dashed)
+  abline(regx, col=4) # fitted line (blue - solid)
+}
+```
+
+**(c) Comment (what did you learn from this assignment)**
+
+The modelling of 2 very similar looking, but actually different processes is shown in this question:-
+
+(a) **Random Walk with Drift**: This process has a stochastic trend. The series wanders, and its position tomorrow depends on its position today plus a random step. Shocks (the random component) have a permanent effect, knocking the series onto a new path forever.
+
+(b) **Trend Stationary**: This process has a deterministic trend. The series is destined to follow a fixed, predictable line ($\mu$~t~ =.01t), and just fluctuates randomly around it. Shocks have a transitory (temporary) effect; the series will always be pulled back towards the underlying trend line.
